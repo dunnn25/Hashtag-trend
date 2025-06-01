@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xu Hướng Hashtag</title>
+  <!-- Bao gồm các thư viện cần thiết qua CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chrono-node/1.3.11/chrono.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.15.0/Recharts.min.js"></script>
+  <!-- Bao gồm Tailwind CSS để định kiểu -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+  <div id="root" class="container mx-auto p-6"></div>
+
+  <!-- Viết ứng dụng React với JSX -->
+  <script type="text/babel">
+    // Định nghĩa thành phần App chính
+    const App = () => {
+      // Quản lý trạng thái cho chủ đề được chọn, dữ liệu, phạm vi ngày và dự đoán
+      const [selectedTopic, setSelectedTopic] = React.useState('covid19');
+      const [data, setData] = React.useState([]);
+      const [filteredData, setFilteredData] = React.useState([]);
+      const [isLoading, setIsLoading] = React.useState(true);
+      const [prediction, setPrediction] = React.useState(null);
+
+      // Định nghĩa các chủ đề có sẵn cho dropdown
+      const topics = [
+        { value: 'covid19', label: 'Covid 19' },
+        { value: 'ukraine', label: 'Ukraine' },
+        { value: 'travel', label: 'Travel' },
+        { value: 'mondaymotivation', label: 'Monday Motivation' },
+        { value: 'christmas', label: 'Christmas' },
+      ];
+
+      // Tải và xử lý dữ liệu CSV khi thành phần được tải
+      React.useEffect(() => {
+        fetch('/Hashtag_sum_sorted_2_7(1).csv')
+          .then(response => response.text())
+          .then(csv => {
+            Papa.parse(csv, {
+              header: true,
+              skipEmptyLines: true,
+              dynamicTyping: false,
+              transformHeader: (header) => header.trim().replace(/^"|"$/g, ''),
+              transform: (value, header) => value.trim().replace(/^"|"$/g, ''),
+              complete: (results) => {
+                const cleanedData = processAndCleanData(results.data);
+                setData(cleanedData);
+                setFilteredData(cleanedData);
+                setIsLoading(false);
+              },
+              error: (err) => console.error(err),
+            });
+          })
+          .catch(err => console.error('Lỗi khi tải CSV:', err));
+      }, []);
+
+      // Xử lý và làm sạch dữ liệu CSV
+      const processAndCleanData = (rawData) => {
+        return rawData
+          .filter(row => row['date'] && row['date'].trim() !== '')
+          .map(row => {
+            const date = chrono.parseDate(row['date']);
+            return {
+              date: date instanceof Date && !isNaN(date) ? date : null,
+              covid19: parseInt(row['#covid19']) || 0,
+              ukraine: parseInt(row['#ukraine']) || 0,
+              travel: parseInt(row['#travel']) || 0,
+              mondaymotivation: parseInt(row['#mondaymotivation']) || 0,
+              christmas: parseInt(row['#christmas']) || 0,
+            };
+          })
+          .filter(row => row.date !== null)
+          .sort((a, b) => a.date - b.date);
+      };
+
+      // Hàm dự đoán đơn giản sử dụng SMA (Simple Moving Average)
+      const predictNextValue = (data, key, windowSize = 3) => {
+        if (data.length < windowSize) return null;
+        const values = data.map(item => item[key]).slice(-windowSize);
+        const average = values.reduce((a, b) => a + b, 0) / windowSize;
+        return Math.round(average); // Làm tròn giá trị dự đoán
+      };
+
+      // Xử lý khi nhấn nút "Khám phá"
+      const handleExplore = () => {
+        setFilteredData(data);
+        setPrediction(null); // Đặt lại dự đoán khi khám phá lại
+      };
+
+      // Xử lý lọc theo phạm vi ngày và dự đoán
+      const filterByDays = (days) => {
+        if (data.length === 0) return;
+        const lastDate = new Date(data[data.length - 1].date);
+        const startDate = new Date(lastDate);
+        startDate.setDate(lastDate.getDate() - days);
+        const filtered = data.filter(row => row.date >= startDate && row.date <= lastDate);
+        setFilteredData(filtered);
+
+        // Tính dự đoán cho chủ đề được chọn
+        const predictedValue = predictNextValue(filtered, selectedTopic);
+        setPrediction(predictedValue);
+      };
+
+      // Hiển thị trạng thái đang tải
+      if (isLoading) {
+        return <div className="text-center text-xl mt-10">Đang tải dữ liệu...</div>;
+      }
+
+      return (
+        <div>
+          {/* Tạo phần tiêu đề với dropdown và nút */}
+          <div className="flex flex-col md:flex-row items-center justify-center mb-8">
+            <h1 className="text-3xl font-bold mr-4 mb-4 md:mb-0">
+              Hãy chọn chủ đề bạn muốn quan sát
+            </h1>
+            <div className="flex items-center">
+              <select
+                className="border rounded-full p-2 mr-2 focus:outline-none"
+                value={selectedTopic}
+                onChange={(e) => setSelectedTopic(e.target.value)}
+              >
+                {topics.map(topic => (
+                  <option key={topic.value} value={topic.value}>
+                    {topic.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="bg-blue-500 text-white rounded-full px-6 py-2 hover:bg-blue-600 transition"
+                onClick={handleExplore}
+              >
+                Khám phá
+              </button>
+            </div>
+          </div>
+
+          {/* Hiển thị biểu đồ nếu có dữ liệu */}
+          {filteredData.length > 0 && (
+            <div className="bg-white p-6 rounded-lg shadow-md">
+              <h2 className="text-xl font-semibold mb-4">
+                Mức độ quan tâm theo thời gian
+              </h2>
+              <Recharts.ResponsiveContainer width="100%" height={400}>
+                <Recharts.LineChart data={filteredData}>
+                  <Recharts.CartesianGrid strokeDasharray="3 3" />
+                  <Recharts.XAxis
+                    dataKey="date"
+                    tickFormatter={(date) => date.toLocaleDateString('vi-VN')}
+                    interval="preserveStartEnd"
+                  />
+                  <Recharts.YAxis label={{ value: 'Số lượng', angle: -90, position: 'insideLeft' }} />
+                  <Recharts.Tooltip
+                    labelFormatter={(date) => new Date(date).toLocaleDateString('vi-VN')}
+                  />
+                  <Recharts.Line
+                    type="monotone"
+                    dataKey={selectedTopic}
+                    stroke="#3B82F6"
+                    dot={false}
+                    strokeWidth={2}
+                  />
+                </Recharts.LineChart>
+              </Recharts.ResponsiveContainer>
+
+              {/* Thêm các nút để lọc phạm vi ngày */}
+              <div className="flex justify-center mt-4 space-x-4">
+                <button
+                  className="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300"
+                  onClick={() => filterByDays(1)}
+                >
+                  1 ngày
+                </button>
+                <button
+                  className="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300"
+                  onClick={() => filterByDays(5)}
+                >
+                  5 ngày
+                </button>
+                <button
+                  className="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300"
+                  onClick={() => filterByDays(10)}
+                >
+                  10 ngày
+                </button>
+              </div>
+
+              {/* Hiển thị kết quả dự đoán */}
+              {prediction !== null && (
+                <div className="mt-4 text-center">
+                  <h3 className="text-lg font-medium">Dự đoán cho ngày tiếp theo:</h3>
+                  <p className="text-xl font-bold">{prediction} lượt quan tâm</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // Hiển thị thành phần App vào DOM
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
